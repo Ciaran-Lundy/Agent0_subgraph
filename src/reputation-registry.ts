@@ -1,4 +1,5 @@
 import { BigInt, Bytes, ByteArray, ethereum, log, BigDecimal, DataSourceContext } from "@graphprotocol/graph-ts"
+import { BIGINT_ZERO, BIGINT_ONE } from "./constants"
 import { getChainId } from "./utils/chain"
 import { isIpfsUri, extractIpfsHash, determineUriType, logIpfsExtraction } from "./utils/ipfs"
 import {
@@ -193,19 +194,22 @@ function updateAgentStats(agent: Agent, value: BigDecimal, timestamp: BigInt): v
   agent.updatedAt = timestamp
   agent.save()
   
-  // Update or create agent stats
-  let statsId = agent.id
-  let stats = AgentStats.load(statsId)
-  
-  if (stats == null) {
-    stats = new AgentStats(statsId)
-    stats.agent = agent.id
+
+  let stats = new AgentStats(0)
+  stats.agent = agent.id
+  let previousStats = AgentStats.load(stats.id - 1)
+  if (previousStats != null) {
+    stats.totalFeedback = previousStats.totalFeedback
+    stats.averageFeedbackValue = previousStats.averageFeedbackValue
+    stats.totalValidations = previousStats.totalValidations
+    stats.completedValidations = previousStats.totalFeedback
+    stats.averageValidationScore = previousStats.averageValidationScore
+  } else {
     stats.totalFeedback = BIGINT_ZERO
     stats.averageFeedbackValue = BigDecimal.fromString("0")
     stats.totalValidations = BIGINT_ZERO
     stats.completedValidations = BIGINT_ZERO
     stats.averageValidationScore = BigDecimal.fromString("0")
-    stats.lastActivity = timestamp
   }
   
   // Update feedback stats
@@ -234,9 +238,15 @@ function updateAgentStatsAfterRevocation(agent: Agent, revokedValue: BigDecimal,
   agent.updatedAt = timestamp
   agent.save()
   
-  // Update agent stats
-  let stats = AgentStats.load(agent.id)
-  if (stats != null) {
+  let stats = new AgentStats(0)
+  stats.agent = agent.id
+  let previousStats = AgentStats.load(stats.id - 1)
+  if (previousStats != null) {
+    stats.totalFeedback = previousStats.totalFeedback
+    stats.averageFeedbackValue = previousStats.averageFeedbackValue
+    stats.totalValidations = previousStats.totalValidations
+    stats.completedValidations = previousStats.totalFeedback
+    stats.averageValidationScore = previousStats.averageValidationScore
     let nOld = stats.totalFeedback
     if (nOld.gt(BIGINT_ZERO)) {
       let totalOld = stats.averageFeedbackValue.times(BigDecimal.fromString(nOld.toString()))
@@ -249,7 +259,13 @@ function updateAgentStatsAfterRevocation(agent: Agent, revokedValue: BigDecimal,
         let totalNew = totalOld.minus(revokedValue)
         stats.averageFeedbackValue = totalNew.div(BigDecimal.fromString(nNew.toString()))
       }
-    }
+  } else {
+    stats.totalFeedback = BIGINT_ZERO
+    stats.averageFeedbackValue = BigDecimal.fromString("0")
+    stats.totalValidations = BIGINT_ZERO
+    stats.completedValidations = BIGINT_ZERO
+    stats.averageValidationScore = BigDecimal.fromString("0")
+  }
     stats.updatedAt = timestamp
     stats.save()
   }
