@@ -1,4 +1,4 @@
-import { Address, BigInt, Bytes, ethereum, log, BigDecimal, DataSourceContext } from "@graphprotocol/graph-ts"
+import { Address, BigInt, Bytes, ByteArray, ethereum, log, BigDecimal, DataSourceContext } from "@graphprotocol/graph-ts"
 import { getChainId } from "./utils/chain"
 import { isIpfsUri, extractIpfsHash, determineUriType, logIpfsExtraction } from "./utils/ipfs"
 import { isJsonBase64DataUri, extractBase64PayloadFromDataUri } from "./utils/data-uri"
@@ -18,7 +18,7 @@ import {
   AgentMetadata,
   AgentRegistrationFile,
   Protocol, 
-  GlobalStats
+  ProtocolStats
 } from "../generated/schema"
 import { getContractAddresses, getChainName, isSupportedChain } from "./contract-addresses"
 import { BIGINT_ZERO, BIGINT_ONE, ZERO_ADDRESS } from "./constants"
@@ -54,27 +54,6 @@ export function handleAgentRegistered(event: Registered): void {
   agent.save()
   
   updateProtocolStats(BigInt.fromI32(chainId), agent, event.block.timestamp)
-  
-  // Update global stats - agent registration
-  let globalStats = GlobalStats.load("global")
-  if (globalStats == null) {
-    globalStats = new GlobalStats("global")
-    globalStats.totalAgents = BIGINT_ZERO
-    globalStats.totalFeedback = BIGINT_ZERO
-    globalStats.totalValidations = BIGINT_ZERO
-    globalStats.totalProtocols = BIGINT_ZERO
-    globalStats.agents = []
-    globalStats.tags = []
-  }
-  
-  globalStats.totalAgents = globalStats.totalAgents.plus(BIGINT_ONE)
-  
-  let currentGlobalAgents = globalStats.agents
-  currentGlobalAgents.push(agent.id)
-  globalStats.agents = currentGlobalAgents
-  
-  globalStats.updatedAt = event.block.timestamp
-  globalStats.save()
   
   // Registration file indexing: IPFS or base64 data URI
   if (event.params.agentURI.length > 0 && isIpfsUri(event.params.agentURI)) {
@@ -340,10 +319,9 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
     return
   }
 
-  let protocolId = Bytes.fromBigInt(chainId)
+  let protocolId = Bytes.fromByteArray(ByteArray.fromBigInt(chainId))
   let protocol = Protocol.load(protocolId)
   
-  let isNewProtocol = false
   if (protocol == null) {
     protocol = new Protocol(protocolId)
     protocol.chainId = chainId
@@ -355,7 +333,6 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
     protocol.validationRegistry = addresses.validationRegistry
     
     protocol.tags = []
-    isNewProtocol = true
   }
 
   // Trust models now come from registrationFile, not directly from Agent
@@ -364,21 +341,24 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
   protocol.updatedAt = timestamp
   protocol.save()
   
-  if (isNewProtocol) {
-    let globalStats = GlobalStats.load("global")
-    if (globalStats == null) {
-      globalStats = new GlobalStats("global")
-      globalStats.totalAgents = BIGINT_ZERO
-      globalStats.totalFeedback = BIGINT_ZERO
-      globalStats.totalValidations = BIGINT_ZERO
-      globalStats.totalProtocols = BIGINT_ZERO
-      globalStats.agents = []
-      globalStats.tags = []
-    }
-    globalStats.totalProtocols = globalStats.totalProtocols.plus(BIGINT_ONE)
-    globalStats.updatedAt = timestamp
-    globalStats.save()
+  let protocolStats = new ProtocolStats(0)
+  protocolStats.protocol = protocolId
+  let previousProtocolStats = ProtocolStats.load(protocolStats.id - 1)
+  if (previousProtocolStats != null) {
+    protocolStats.totalAgents = previousProtocolStats.totalAgents
+    protocolStats.totalFeedback = previousProtocolStats.totalFeedback
+    protocolStats.totalValidations = previousProtocolStats.totalValidations
+  } else {
+    protocolStats.totalAgents = BIGINT_ZERO
+    protocolStats.totalFeedback = BIGINT_ZERO
+    protocolStats.totalValidations = BIGINT_ZERO
   }
+  
+  protocolStats.totalAgents = protocolStats.totalAgents.plus(BIGINT_ONE)
+  
+  protocolStats.lastActivity = timestamp
+  protocolStats.updatedAt = timestamp
+  protocolStats.save()
 }
 
 
@@ -387,7 +367,7 @@ function updateProtocolActiveCounts(chainId: BigInt, agent: Agent, timestamp: Bi
     return
   }
 
-  let protocolId = Bytes.fromBigInt(chainId)
+  let protocolId = Bytes.fromByteArray(ByteArray.fromBigInt(chainId))
   let protocol = Protocol.load(protocolId)
   if (protocol == null) {
     return

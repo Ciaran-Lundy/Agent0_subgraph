@@ -1,4 +1,4 @@
-import { BigInt, Bytes, ethereum, log, BigDecimal } from "@graphprotocol/graph-ts"
+import { BigInt, Bytes, ByteArray, ethereum, log, BigDecimal } from "@graphprotocol/graph-ts"
 import { BIGINT_ZERO, BIGINT_ONE, ZERO_BYTES32_BYTES } from "./constants"
 import { getChainId } from "./utils/chain"
 import {
@@ -9,7 +9,7 @@ import {
   Agent,
   Validation,
   AgentStats,
-  GlobalStats,
+  ProtocolStats,
   Protocol
 } from "../generated/schema"
 import { getContractAddresses, getChainName, isSupportedChain } from "./contract-addresses"
@@ -62,23 +62,6 @@ export function handleValidationRequest(event: ValidationRequest): void {
   // Update protocol stats
   updateProtocolStats(BigInt.fromI32(chainId), agent, event.block.timestamp)
   
-  // Update global stats - validation
-  let globalStats = GlobalStats.load("global")
-  if (globalStats == null) {
-    globalStats = new GlobalStats("global")
-    globalStats.totalAgents = BIGINT_ZERO
-    globalStats.totalFeedback = BIGINT_ZERO
-    globalStats.totalValidations = BIGINT_ZERO
-    globalStats.totalProtocols = BIGINT_ZERO
-    globalStats.agents = []
-    globalStats.tags = []
-    globalStats.updatedAt = BIGINT_ZERO
-  }
-  
-  globalStats.totalValidations = globalStats.totalValidations.plus(BIGINT_ONE)
-  globalStats.updatedAt = event.block.timestamp
-  globalStats.save()
-  
   log.info("Validation request for agent {}: {}", [agentEntityId, requestHash.toHexString()])
 }
 
@@ -123,38 +106,55 @@ export function handleValidationResponse(event: ValidationResponse): void {
   // Update agent stats
   updateAgentValidationStats(agentEntityId, false, true, response, event.block.timestamp)
   
-  // Do NOT increment protocol/global totals here; totals are counted on ValidationRequest.
+  // Do NOT increment totals here; totals are counted on ValidationRequest.
   // We only touch updatedAt for observability.
-  let protocol = Protocol.load(BigInt.fromI32(chainId).toString())
+  let protocol = Protocol.load(Bytes.fromI32(chainId))
   if (protocol != null) {
     protocol.updatedAt = event.block.timestamp
     protocol.save()
   }
-  let globalStats = GlobalStats.load("global")
-  if (globalStats != null) {
-    globalStats.updatedAt = event.block.timestamp
-    globalStats.save()
+
+  let protocolStats = new ProtocolStats(0)
+  protocolStats.protocol = Bytes.fromByteArray(ByteArray.fromBigInt(chainId))
+  let previousProtocolStats = ProtocolStats.load(protocolStats.id - 1)
+  if (previousProtocolStats != null) {
+    protocolStats.totalAgents = previousProtocolStats.totalAgents
+    protocolStats.totalFeedback = previousProtocolStats.totalFeedback
+    protocolStats.totalValidations = previousProtocolStats.totalValidations
+  } else {
+    protocolStats.totalAgents = BIGINT_ZERO
+    protocolStats.totalFeedback = BIGINT_ZERO
+    protocolStats.totalValidations = BIGINT_ZERO
   }
   
-  log.info("Validation response for agent {}: score {}", [agentEntityId, response.toString()])
+  protocolStats.lastActivity = event.block.timestamp
+  protocolStats.updatedAt = event.block.timestamp
+  protocolStats.save()
+  
+  log.info("Validation response for agent {}: score {}", [agentEntityId.toString(), response.toString()])
 }
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
-function updateAgentValidationStats(agentId: string, isRequest: boolean, isResponse: boolean, score: i32, timestamp: BigInt): void {
-  let stats = AgentStats.load(agentId)
+function updateAgentValidationStats(agentId: Bytes, isRequest: boolean, isResponse: boolean, score: i32, timestamp: BigInt): void {
   
-  if (stats == null) {
-    stats = new AgentStats(agentId)
-    stats.agent = agentId
+  let stats = new AgentStats(0)
+  stats.agent = agentId
+  let previousStats = AgentStats.load(stats.id - 1)
+  if (previousStats != null) {
+    stats.totalFeedback = previousStats.totalFeedback
+    stats.averageFeedbackValue = previousStats.averageFeedbackValue
+    stats.totalValidations = previousStats.totalValidations
+    stats.completedValidations = previousStats.totalFeedback
+    stats.averageValidationScore = previousStats.averageValidationScore
+  } else {
     stats.totalFeedback = BIGINT_ZERO
     stats.averageFeedbackValue = BigDecimal.fromString("0")
     stats.totalValidations = BIGINT_ZERO
     stats.completedValidations = BIGINT_ZERO
     stats.averageValidationScore = BigDecimal.fromString("0")
-    stats.lastActivity = timestamp
   }
   
   if (isRequest) {
@@ -203,36 +203,28 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
     protocol.validationRegistry = addresses.validationRegistry
     
     // Initialize all fields
-    protocol.totalAgents = BIGINT_ZERO
-    protocol.totalFeedback = BIGINT_ZERO
-    protocol.totalValidations = BIGINT_ZERO
-    protocol.agents = []
     protocol.tags = []
     protocol.updatedAt = BIGINT_ZERO
   }
-  
-  protocol.totalValidations = protocol.totalValidations.plus(BIGINT_ONE)
-  protocol.updatedAt = timestamp
-  protocol.save()
-}
 
-function updateGlobalStats(timestamp: BigInt): void {
-  let globalStats = GlobalStats.load("global")
-  
-  if (globalStats == null) {
-    globalStats = new GlobalStats("global")
-    globalStats.totalAgents = BIGINT_ZERO
-    globalStats.totalFeedback = BIGINT_ZERO
-    globalStats.totalValidations = BIGINT_ZERO
-    globalStats.totalProtocols = BIGINT_ZERO
-    globalStats.agents = []
-    globalStats.tags = []
-    globalStats.updatedAt = BIGINT_ZERO
+  let protocolStats = new ProtocolStats(0)
+  protocolStats.protocol = Bytes.fromByteArray(ByteArray.fromBigInt(chainId))
+  let previousProtocolStats = ProtocolStats.load(protocolStats.id - 1)
+  if (previousProtocolStats != null) {
+    protocolStats.totalAgents = previousProtocolStats.totalAgents
+    protocolStats.totalFeedback = previousProtocolStats.totalFeedback
+    protocolStats.totalValidations = previousProtocolStats.totalValidations
+  } else {
+    protocolStats.totalAgents = BIGINT_ZERO
+    protocolStats.totalFeedback = BIGINT_ZERO
+    protocolStats.totalValidations = BIGINT_ZERO
   }
   
-  globalStats.totalValidations = globalStats.totalValidations.plus(BIGINT_ONE)
-  globalStats.updatedAt = timestamp
-  globalStats.save()
+  protocolStats.totalFeedback = protocolStats.totalValidations.plus(BIGINT_ONE)
+  
+  protocolStats.lastActivity = timestamp
+  protocolStats.updatedAt = timestamp
+  protocolStats.save()
 }
 
 
