@@ -17,7 +17,7 @@ import {
   Agent,
   AgentMetadata,
   AgentRegistrationFile,
-  Protocol,
+  Protocol, 
   GlobalStats
 } from "../generated/schema"
 import { getContractAddresses, getChainName, isSupportedChain } from "./contract-addresses"
@@ -36,7 +36,7 @@ export function handleAgentRegistered(event: Registered): void {
   let agent = Agent.load(agentEntityId)
   if (agent == null) {
     agent = new Agent(agentEntityId)
-    agent.chainId = BigInt.fromI32(chainId)
+    agent.protocol = Bytes.fromI32(chainId)
     agent.agentId = agentId
     agent.createdAt = event.block.timestamp
     agent.operators = []
@@ -340,7 +340,7 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
     return
   }
 
-  let protocolId = chainId.toString()
+  let protocolId = Bytes.fromBigInt(chainId)
   let protocol = Protocol.load(protocolId)
   
   let isNewProtocol = false
@@ -354,20 +354,10 @@ function updateProtocolStats(chainId: BigInt, agent: Agent, timestamp: BigInt): 
     protocol.reputationRegistry = addresses.reputationRegistry
     protocol.validationRegistry = addresses.validationRegistry
     
-    protocol.totalAgents = BIGINT_ZERO
-    protocol.totalFeedback = BIGINT_ZERO
-    protocol.totalValidations = BIGINT_ZERO
-    protocol.agents = []
     protocol.tags = []
     isNewProtocol = true
   }
-  
-  protocol.totalAgents = protocol.totalAgents.plus(BIGINT_ONE)
-  
-  let currentAgents = protocol.agents
-  currentAgents.push(agent.id)
-  protocol.agents = currentAgents
-  
+
   // Trust models now come from registrationFile, not directly from Agent
   // Skip trust model update here since we can't access file entities from chain handlers
   
@@ -397,7 +387,7 @@ function updateProtocolActiveCounts(chainId: BigInt, agent: Agent, timestamp: Bi
     return
   }
 
-  let protocolId = chainId.toString()
+  let protocolId = Bytes.fromBigInt(chainId)
   let protocol = Protocol.load(protocolId)
   if (protocol == null) {
     return
