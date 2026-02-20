@@ -37,6 +37,7 @@ export function parseFeedbackFile(content: Bytes): void {
   
   // Create feedback file with composite ID
   let feedbackFile = new FeedbackFile(fileId)
+  feedbackFile.txHash = Bytes.fromUTF8(txHash)
   feedbackFile.cid = cid
   feedbackFile.feedbackId = feedbackId
   feedbackFile.createdAt = context.getBigInt('timestamp')

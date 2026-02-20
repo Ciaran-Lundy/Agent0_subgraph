@@ -82,6 +82,7 @@ export function handleAgentRegistered(event: Registered): void {
     let decoded = base64DecodeToBytes(b64)
 
     let registration = new AgentRegistrationFile(fileId)
+    registration.txHash = Bytes.fromUTF8(txHash)
     registration.cid = `datauri:${txHash}:${event.logIndex.toString()}`
     registration.agentId = agentEntityId.toString()
     registration.createdAt = event.block.timestamp
@@ -142,6 +143,7 @@ export function handleMetadataSet(event: MetadataSet): void {
   
   let metadataId = Bytes.fromUTF8(`${chainId.toString()}:${agentId.toString()}:${event.params.metadataKey}`)
   let metadata = new AgentMetadata(metadataId)
+  metadata.protocol = Bytes.fromI32(chainId)
   metadata.agent = agentEntityId
   metadata.key = event.params.metadataKey
   metadata.value = event.params.metadataValue
@@ -202,6 +204,7 @@ export function handleUriUpdated(event: URIUpdated): void {
     let decoded = base64DecodeToBytes(b64)
 
     let registration = new AgentRegistrationFile(fileId)
+    registration.txHash = Bytes.fromUTF8(txHash)
     registration.cid = `datauri:${txHash}:${event.logIndex.toString()}`
     registration.agentId = agentEntityId.toString()
     registration.createdAt = event.block.timestamp

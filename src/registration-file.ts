@@ -15,6 +15,7 @@ export function parseRegistrationFile(content: Bytes): void {
   
   // Create registration file with composite ID
   let metadata = new AgentRegistrationFile(fileId)
+  metadata.txHash = Bytes.fromUTF8(txHash)
   metadata.cid = cid
   metadata.agentId = agentId
   metadata.createdAt = context.getBigInt('timestamp')

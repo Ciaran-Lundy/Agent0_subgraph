@@ -58,6 +58,7 @@ export function handleNewFeedback(event: NewFeedback): void {
   // Create feedback entity
   let feedbackId = Bytes.fromUTF8(`${agentEntityId.toString()}:${clientAddress.toHexString()}:${feedbackIndex.toString()}`)
   let feedback = new Feedback(feedbackId)
+  feedback.protocol = Bytes.fromI32(chainId)
   feedback.agent = agentEntityId
   feedback.clientAddress = clientAddress
   feedback.feedbackIndex = feedbackIndex
@@ -171,6 +172,7 @@ export function handleResponseAppended(event: ResponseAppended): void {
   // Create response entity
   let responseId = Bytes.fromUTF8(`${feedbackId.toString()}:${event.transaction.hash.toHexString()}:${event.logIndex.toString()}`)
   let response = new FeedbackResponse(responseId)
+  response.responseIndex = event.logIndex
   response.feedback = feedbackId
   response.responder = responder
   response.responseUri = event.params.responseURI
